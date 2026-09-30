@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "secrets-scanner"
+version = "0.1.0"
+description = "Find leaked secrets in git history"
+requires-python = ">=3.10"
+
+[project.scripts]
+secrets-scan = "secrets_scanner.cli:main"
+
+[tool.setuptools]
+packages = ["secrets_scanner"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

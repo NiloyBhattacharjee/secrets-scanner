@@ -1,0 +1,6 @@
+- id: secrets-scanner
+  name: secrets-scanner
+  description: Block commits that add secrets
+  entry: secrets-scan staged --min-confidence medium
+  language: python
+  pass_filenames: false
