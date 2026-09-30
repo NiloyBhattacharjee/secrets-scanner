@@ -62,6 +62,8 @@ The software is provided "as is", without warranty of any kind. The authors acce
 no liability for any damage, data loss, or legal consequences arising from its use
 or misuse. Using this tool means you accept these terms.
 
+See [CLI.md](CLI.md) for every command and option.
+
 Common flags: `--json`, `--min-confidence {low,medium,high}`, `--baseline FILE`, `--write-baseline FILE`, `--show-secrets`.
 Exit codes: `0` clean, `1` findings, `2` error.
 
