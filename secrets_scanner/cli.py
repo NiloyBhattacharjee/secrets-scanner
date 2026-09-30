@@ -6,7 +6,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import baseline, git, report, scanner, sysaudit, vulnscan
+from . import baseline, git, report, scanner, sysaudit, threatintel, vulnscan
 from .detect import CONFIDENCE, Finding, at_least
 
 HOOK_MARKER = "# installed by secrets-scanner"
@@ -48,6 +48,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--output", "-o", metavar="FILE", help="write the report here (.json for JSON, else Markdown)")
     p.add_argument("--skip-lynis", action="store_true")
     p.add_argument("--skip-trivy", action="store_true")
+    p.add_argument("--no-kev", action="store_true", help="don't check CVEs against CISA's exploited list")
+    p.add_argument("--kev-file", metavar="FILE", help="use this KEV JSON file instead of downloading it")
+    p.add_argument("--epss", action="store_true",
+                   help="add EPSS exploit-likelihood scores (sends CVE IDs to api.first.org)")
 
     p = sub.add_parser("install-hook", help="install a git pre-commit hook")
     p.add_argument("repo", nargs="?", default=".")
@@ -146,7 +150,10 @@ def run_audit(args) -> int:
         tools.append(vulnscan.run_lynis())
     if not args.skip_trivy:
         print("running trivy (first run downloads the CVE database)...", file=sys.stderr)
-        tools.append(vulnscan.run_trivy())
+        trivy = vulnscan.run_trivy()
+        tools.append(trivy)
+        if trivy.status == "ok":
+            _add_threat_intel(trivy, args)
     print("scanning for exposed credentials and files...", file=sys.stderr)
     files = sysaudit.audit_paths([p for p in args.paths if Path(p).exists()])
 
@@ -161,6 +168,30 @@ def run_audit(args) -> int:
         if t.status != "ok":
             print(f"note: {t.tool} {t.status}: {t.detail}", file=sys.stderr)
     return 1 if files or any(t.data.get("warnings") or t.data.get("vulnerabilities") for t in tools) else 0
+
+
+def _add_threat_intel(trivy: vulnscan.ToolResult, args) -> None:
+    """Tag Trivy's CVEs with KEV/EPSS data. Failures are recorded in the report, never fatal."""
+    vulns = trivy.data["vulnerabilities"]
+    kev = epss = None
+    if not args.no_kev:
+        try:
+            catalog = threatintel.load_kev(args.kev_file)
+            kev = catalog.entries
+            trivy.data["kev"] = {"status": "ok", "source": catalog.source, "version": catalog.version,
+                                 "age_hours": catalog.age_hours, "size": len(catalog.entries)}
+        except threatintel.IntelError as e:
+            trivy.data["kev"] = {"status": "error", "detail": str(e)}
+            print(f"note: KEV check failed: {e}", file=sys.stderr)
+    if args.epss and vulns:
+        print(f"looking up EPSS scores for {len(vulns)} CVEs at api.first.org...", file=sys.stderr)
+        try:
+            epss = threatintel.fetch_epss([v["id"] for v in vulns if v["id"]])
+            trivy.data["epss"] = {"status": "ok"}
+        except threatintel.IntelError as e:
+            trivy.data["epss"] = {"status": "error", "detail": str(e)}
+            print(f"note: {e}", file=sys.stderr)
+    threatintel.enrich(vulns, kev, epss)
 
 
 def _format_sys(f: sysaudit.SysFinding) -> str:

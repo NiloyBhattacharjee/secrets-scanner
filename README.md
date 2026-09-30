@@ -38,6 +38,8 @@ It only reads and reports — it never modifies, transmits, or exfiltrates anyth
 2. **Trivy** matches installed packages against public CVE databases and lists each known vulnerability with the version that fixes it.
 3. The **system** scan above finds exposed credentials and unencrypted files.
 
+Trivy's CVEs are then checked against **CISA's Known Exploited Vulnerabilities** list, so CVEs that are being attacked in the wild appear first. Add `--epss` to also rank the rest by their chance of being exploited soon (see [CLI.md](CLI.md#exploit-data-kev-and-epss)).
+
 ```sh
 sudo apt install lynis trivy
 sudo python3 -m secrets_scanner audit -o report.md            # Markdown report

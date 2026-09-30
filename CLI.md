@@ -51,6 +51,25 @@ sudo python3 -m secrets_scanner audit [PATHS...] [options]
 | `-o FILE`, `--output FILE` | print to terminal | Save the report to `FILE`. A name ending in `.json` gives JSON; anything else gives Markdown. |
 | `--skip-lynis` | off | Don't run Lynis (saves a few minutes). |
 | `--skip-trivy` | off | Don't run Trivy. |
+| `--no-kev` | off | Don't check Trivy's CVEs against CISA's list of actively exploited vulnerabilities. |
+| `--kev-file FILE` | download | Use a KEV JSON file you downloaded yourself, for machines without internet. |
+| `--epss` | off | Add each CVE's EPSS score: the chance it gets exploited in the next 30 days. **Sends the CVE IDs found on this machine to api.first.org.** |
+
+### Exploit data: KEV and EPSS
+
+Trivy often lists hundreds of CVEs, and most of them are never attacked in practice. Two public data sources show which ones matter:
+
+- **CISA KEV** (on by default) is the US government's list of CVEs that attackers are **known to be exploiting**. The tool downloads the whole list (about 1,700 entries) and matches it on your machine, so nothing about your system is sent. The list is saved in `~/.cache/secrets-scanner/kev.json` and refreshed at most once a day. If the machine is offline, the saved copy is used and the report says how old it is.
+- **FIRST EPSS** (only with `--epss`) gives each CVE a probability of being exploited in the next 30 days. This needs an online lookup, which is why it's off by default.
+
+With KEV on, the report adds:
+- a summary row counting actively exploited CVEs, and how many are used in ransomware;
+- an **Actively exploited (CISA KEV)** section near the top, with CISA's required fix for each;
+- `KEV` (and `EPSS`, if enabled) columns in the CVE table.
+
+The CVE list is then sorted with exploited CVEs first, then by EPSS score, then by severity. So an actively exploited LOW-severity CVE ranks above an unexploited CRITICAL one.
+
+If the KEV list can't be loaded, the report says so and the audit carries on without it.
 
 Notes:
 - Run it with `sudo`. Without root, Lynis is skipped and many files can't be read.
