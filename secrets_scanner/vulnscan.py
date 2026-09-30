@@ -9,13 +9,46 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
 
 SEVERITIES = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN")
-TRIVY_SKIP_DIRS = ("/proc", "/sys", "/dev", "/run", "/snap", "/var/lib/docker")
+TRIVY_SKIP_DIRS = ("/proc", "/sys", "/dev", "/run", "/snap", "/var/lib/docker", "/mnt", "/media")
+
+# Mounts that are not part of this Linux system: WSL's Windows drives (drvfs/9p),
+# network shares, and removable-media filesystems. Scanning them is slow and can crash Trivy.
+FOREIGN_FS_TYPES = frozenset({
+    "drvfs", "9p", "virtiofs", "cifs", "smb3", "smbfs", "nfs", "nfs4",
+    "fuse.sshfs", "fuse.rclone", "vfat", "exfat", "ntfs", "ntfs3", "fuseblk",
+})
+
+
+def _unescape_mount(path: str) -> str:
+    """/proc/mounts writes spaces etc. as octal escapes, e.g. '\\040'."""
+    return re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), path)
+
+
+def foreign_mounts(mounts_text: str) -> list[str]:
+    """Mount points in /proc/mounts format whose filesystem type is in FOREIGN_FS_TYPES."""
+    out = []
+    for line in mounts_text.splitlines():
+        parts = line.split()
+        if len(parts) >= 3 and parts[2] in FOREIGN_FS_TYPES and parts[1] != "/":
+            out.append(_unescape_mount(parts[1]))
+    return out
+
+
+def trivy_skip_dirs() -> list[str]:
+    skip = list(TRIVY_SKIP_DIRS)
+    try:
+        with open("/proc/mounts", encoding="utf-8") as f:
+            extra = foreign_mounts(f.read())
+    except OSError:
+        extra = []
+    return skip + [m for m in extra if not any(m == s or m.startswith(s + "/") for s in skip)]
 
 
 @dataclass
@@ -103,7 +136,7 @@ def run_trivy(target: str = "/", timeout: int = 1800) -> ToolResult:
     if not exe:
         return ToolResult("trivy", "skipped", "not installed (sudo apt install trivy)")
     cmd = [exe, "rootfs", "--scanners", "vuln", "--format", "json", "--quiet",
-           "--skip-dirs", ",".join(TRIVY_SKIP_DIRS), target]
+           "--skip-dirs", ",".join(trivy_skip_dirs()), target]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except (OSError, subprocess.TimeoutExpired) as e:

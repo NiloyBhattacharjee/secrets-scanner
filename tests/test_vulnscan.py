@@ -1,5 +1,5 @@
 from secrets_scanner import report
-from secrets_scanner.vulnscan import ToolResult, parse_lynis_report, parse_trivy_json
+from secrets_scanner.vulnscan import ToolResult, foreign_mounts, parse_lynis_report, parse_trivy_json
 
 LYNIS_DAT = """\
 # Lynis Report
@@ -57,3 +57,18 @@ def test_markdown_report_includes_every_section():
 def test_skipped_tool_is_reported_not_fatal():
     md = report.to_markdown(report.build([], [ToolResult("trivy", "skipped", "not installed")]))
     assert "| trivy | skipped: not installed |" in md
+
+
+WSL_MOUNTS = r"""
+/dev/sdc / ext4 rw,relatime,discard,errors=remount-ro,data=ordered 0 0
+none /run tmpfs rw,nosuid,nodev,mode=755 0 0
+C:\134 /mnt/c 9p rw,noatime,dirsync,aname=drvfs;path=C:\;uid=1000 0 0
+F:\134 /mnt/f 9p rw,noatime,dirsync,aname=drvfs;path=F:\;uid=1000 0 0
+drvfs /home/me/Windows\040Docs drvfs rw,noatime 0 0
+//nas/share /srv/nas cifs rw,vers=3.0 0 0
+/dev/sdd /var/lib/data ext4 rw,relatime 0 0
+"""
+
+
+def test_foreign_mounts_finds_windows_drives_and_shares():
+    assert foreign_mounts(WSL_MOUNTS) == ["/mnt/c", "/mnt/f", "/home/me/Windows Docs", "/srv/nas"]
